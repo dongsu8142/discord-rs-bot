@@ -11,6 +11,8 @@ use serenity::{
     prelude::*,
 };
 use songbird::SerenityInit;
+use std::time::Duration;
+use tokio::time::sleep;
 use tracing::{error, info};
 
 struct Handler;
@@ -38,7 +40,17 @@ impl EventHandler for Handler {
     }
 
     async fn ready(&self, ctx: Context, ready: Ready) {
-        info!("{} is connected!", ready.user.name);
+        if let Some(shard) = ready.shard {
+            println!(
+                "{} is connected on shard {}/{}!",
+                ready.user.name,
+                shard.id.0 + 1,
+                shard.total
+            );
+            if shard.id.0 != 0 {
+                return;
+            };
+        }
         let commands = Command::set_global_commands(
             &ctx.http,
             vec![
@@ -69,12 +81,25 @@ async fn main() {
         .type_map_insert::<commands::play::HttpKey>(HttpClient::new())
         .await
         .expect("Error creating client");
+    let manager = client.shard_manager.clone();
 
     tokio::spawn(async move {
-        let _ = client
-            .start()
-            .await
-            .map_err(|why| error!("Client error: {why:?}"));
+        loop {
+            sleep(Duration::from_secs(30)).await;
+            let lock = manager.lock().await;
+            let shard_runners = lock.runners.lock().await;
+            for (id, runner) in shard_runners.iter() {
+                info!(
+                    "Shard ID {} is {} with a latency of {:?}",
+                    id, runner.stage, runner.latency,
+                );
+            }
+        }
+    });
+    tokio::spawn(async move {
+        if let Err(why) = client.start_shards(2).await {
+            error!("Client error: {:?}", why);
+        };
     });
     let _ = tokio::signal::ctrl_c().await;
     info!("Received Ctrl-C, shutting down.");
