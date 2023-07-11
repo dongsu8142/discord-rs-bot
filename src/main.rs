@@ -27,6 +27,9 @@ impl EventHandler for Handler {
                 "나가" => Some(commands::leave::run(&ctx, &command).await),
                 "재생" => Some(commands::play::run(&ctx, &command, &command.data.options).await),
                 "스킵" => Some(commands::skip::run(&ctx, &command).await),
+                "볼륨" => {
+                    Some(commands::volume::run(&ctx, &command, &command.data.options).await)
+                }
                 _ => Some(CreateEmbed::new().description("")),
             };
 
@@ -58,6 +61,7 @@ impl EventHandler for Handler {
                 commands::leave::register(),
                 commands::play::register(),
                 commands::skip::register(),
+                commands::volume::register(),
             ],
         )
         .await
