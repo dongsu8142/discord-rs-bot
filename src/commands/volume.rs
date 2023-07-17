@@ -27,10 +27,10 @@ pub async fn run(
         };
         let option = options.get(0);
         if option.is_none() {
-            return CreateEmbed::new().title(format!(
-                "현재 볼륨은 {}입니다",
-                current.unwrap().get_info().await.unwrap().volume
-            ));
+            let current_volume = (current.unwrap().get_info().await.unwrap().volume * 100.0) as u32;
+            return CreateEmbed::new()
+                .title(format!("현재 볼륨은 {}입니다", current_volume))
+                .colour(Colour::BLUE);
         }
         let volume = option.unwrap().value.as_i64();
         if let Err(why) = current.unwrap().set_volume(volume.unwrap() as f32 / 100.0) {

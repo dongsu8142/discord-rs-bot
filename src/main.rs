@@ -44,7 +44,7 @@ impl EventHandler for Handler {
 
     async fn ready(&self, ctx: Context, ready: Ready) {
         if let Some(shard) = ready.shard {
-            println!(
+            info!(
                 "{} is connected on shard {}/{}!",
                 ready.user.name,
                 shard.id.0 + 1,
