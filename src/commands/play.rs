@@ -1,8 +1,15 @@
+#[path = "../events/mod.rs"]
+mod events;
+
 use reqwest::Client as HttpClient;
 use serenity::builder::*;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
-use songbird::input::{Compose, YoutubeDl};
+use songbird::{
+    input::{Compose, YoutubeDl},
+    Event,
+};
+use std::time::Duration;
 
 pub struct HttpKey;
 
@@ -23,7 +30,6 @@ pub async fn run(
             .voice_states
             .get(&command.user.id)
             .and_then(|voice_state| voice_state.channel_id);
-
         (guild_id, channel_id)
     };
 
@@ -50,12 +56,28 @@ pub async fn run(
 
     let has_handler = manager.get(guild_id).is_some();
 
-    let handler_lock = match has_handler {
-        true => manager.get(guild_id).unwrap(),
-        false => manager.join(guild_id, connect_to).await.unwrap(),
-    };
+    let handler_lock;
 
-    let mut handler = handler_lock.lock().await;
+    let mut handler = match has_handler {
+        true => {
+            handler_lock = manager.get(guild_id).unwrap();
+            handler_lock.lock().await
+        }
+        false => {
+            handler_lock = manager.join(guild_id, connect_to).await.unwrap();
+            let mut handler = handler_lock.lock().await;
+            handler.add_global_event(
+                Event::Periodic(Duration::from_secs(1), None),
+                events::ChannelEmpty {
+                    ctx: ctx.clone(),
+                    channel_id: channel_id.unwrap(),
+                    manager,
+                    guild_id,
+                },
+            );
+            handler
+        }
+    };
 
     let mut src = YoutubeDl::new(http_client, format!("ytsearch1:{}", music));
     let metadata = src.aux_metadata().await.unwrap();
