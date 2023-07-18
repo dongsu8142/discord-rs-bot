@@ -23,7 +23,6 @@ impl EventHandler for Handler {
         if let Interaction::Command(command) = interaction {
             let _ = command.defer(&ctx.http).await;
             let content = match command.data.name.as_str() {
-                "핑" => Some(commands::ping::run()),
                 "나가" => Some(commands::leave::run(&ctx, &command).await),
                 "재생" => Some(commands::play::run(&ctx, &command, &command.data.options).await),
                 "스킵" => Some(commands::skip::run(&ctx, &command).await),
@@ -57,7 +56,6 @@ impl EventHandler for Handler {
         let commands = Command::set_global_commands(
             &ctx.http,
             vec![
-                commands::ping::register(),
                 commands::leave::register(),
                 commands::play::register(),
                 commands::skip::register(),
