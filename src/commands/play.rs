@@ -1,6 +1,3 @@
-#[path = "../events/mod.rs"]
-mod events;
-
 use reqwest::Client as HttpClient;
 use serenity::builder::*;
 use serenity::model::prelude::*;
@@ -65,17 +62,7 @@ pub async fn run(
         }
         false => {
             handler_lock = manager.join(guild_id, connect_to).await.unwrap();
-            let mut handler = handler_lock.lock().await;
-            handler.add_global_event(
-                Event::Periodic(Duration::from_secs(1), None),
-                events::ChannelEmpty {
-                    ctx: ctx.clone(),
-                    channel_id: channel_id.unwrap(),
-                    manager,
-                    guild_id,
-                },
-            );
-            handler
+            handler_lock.lock().await
         }
     };
 
