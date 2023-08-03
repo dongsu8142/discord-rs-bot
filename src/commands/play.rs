@@ -2,11 +2,7 @@ use reqwest::Client as HttpClient;
 use serenity::builder::*;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
-use songbird::{
-    input::{Compose, YoutubeDl},
-    Event,
-};
-use std::time::Duration;
+use songbird::input::{Compose, YoutubeDl};
 
 pub struct HttpKey;
 
