@@ -1,5 +1,6 @@
 mod commands;
 
+use dotenvy_macro::dotenv;
 use reqwest::Client as HttpClient;
 use serenity::{
     async_trait,
@@ -73,9 +74,8 @@ impl EventHandler for Handler {
 
 #[tokio::main]
 async fn main() {
-    dotenv::dotenv().expect("Failed to load .env file");
     tracing_subscriber::fmt::init();
-    let token = std::env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+    let token = dotenv!("DISCORD_TOKEN");
     let intents = GatewayIntents::GUILDS | GatewayIntents::GUILD_VOICE_STATES;
     let mut client = Client::builder(token, intents)
         .event_handler(Handler)
