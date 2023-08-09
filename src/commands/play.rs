@@ -1,13 +1,38 @@
 use reqwest::Client as HttpClient;
-use serenity::builder::*;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
-use songbird::input::{Compose, YoutubeDl};
+use serenity::{async_trait, builder::*};
+use songbird::tracks::TrackQueue;
+use songbird::{
+    input::{Compose, YoutubeDl},
+    Event, EventHandler, TrackEvent,
+};
+use songbird::{EventContext, Songbird};
+use std::sync::Arc;
 
 pub struct HttpKey;
 
 impl TypeMapKey for HttpKey {
     type Value = HttpClient;
+}
+
+struct TrackEnd {
+    manager: Arc<Songbird>,
+    queue: TrackQueue,
+    guild_id: GuildId,
+}
+
+#[async_trait]
+impl EventHandler for TrackEnd {
+    async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
+        if let EventContext::Track(_track_list) = ctx {
+            if self.queue.is_empty() {
+                let _ = self.manager.remove(self.guild_id).await.unwrap();
+            }
+        };
+
+        None
+    }
 }
 
 pub async fn run(
@@ -65,7 +90,16 @@ pub async fn run(
     let mut src = YoutubeDl::new(http_client, format!("ytsearch1:{}", music));
     let metadata = src.aux_metadata().await.unwrap();
 
-    let _ = handler.enqueue_input(src.into()).await;
+    let song = handler.enqueue_input(src.into()).await;
+    let queue = handler.queue().clone();
+    let _ = song.add_event(
+        Event::Track(TrackEvent::End),
+        TrackEnd {
+            manager,
+            queue,
+            guild_id,
+        },
+    );
     CreateEmbed::new()
         .author(CreateEmbedAuthor::new("노래를 재생합니다."))
         .title(metadata.title.as_ref().unwrap_or(&"<UNKNOWN>".to_string()))
