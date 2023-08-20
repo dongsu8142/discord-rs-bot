@@ -73,7 +73,7 @@ impl EventHandler for Handler {
 
 #[tokio::main]
 async fn main() {
-    dotenvy::dotenv().expect("Failed to load .env file");
+    dotenvy::dotenv();
     tracing_subscriber::fmt::init();
     let token = std::env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
     let intents = GatewayIntents::GUILDS | GatewayIntents::GUILD_VOICE_STATES;

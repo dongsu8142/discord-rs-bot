@@ -28,6 +28,5 @@ RUN apt-get update && apt-get install -y libopus-dev
 RUN python3 -m pip install -U yt-dlp
 
 COPY --from=builder /usr/src/project/target/release/discord-rs .
-COPY .env .
 
 CMD ["discord-rs"]
