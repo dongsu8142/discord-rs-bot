@@ -1,6 +1,5 @@
 mod commands;
 
-use dotenvy::dotenv;
 use reqwest::Client as HttpClient;
 use serenity::{
     async_trait,
