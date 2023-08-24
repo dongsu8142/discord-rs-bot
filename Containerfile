@@ -1,4 +1,4 @@
-FROM rust:slim AS chef
+FROM rust:slim-bookworm AS chef
 
 WORKDIR /usr/src/project
 
@@ -20,12 +20,11 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
 RUN cargo build --release
 
-FROM python:slim-bullseye
+FROM debian:trixie-slim
 
 WORKDIR /usr/local/bin
 
-RUN apt-get update && apt-get install -y libopus-dev
-RUN python3 -m pip install -U yt-dlp
+RUN apt-get update && apt-get install -y libopus-dev yt-dlp
 
 COPY --from=builder /usr/src/project/target/release/discord-rs .
 
