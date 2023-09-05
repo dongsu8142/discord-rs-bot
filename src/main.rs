@@ -1,108 +1,148 @@
 mod commands;
 
-use reqwest::Client as HttpClient;
-use serenity::{
-    async_trait,
-    builder::{CreateEmbed, CreateInteractionResponseFollowup},
-    model::{
-        application::{Command, Interaction},
-        gateway::Ready,
-    },
-    prelude::*,
+use futures::StreamExt;
+use songbird::{shards::TwilightMap, Songbird};
+use std::{mem, sync::Arc};
+use tracing::Level;
+use twilight_cache_inmemory::InMemoryCache;
+use twilight_gateway::{
+    stream::{self, ShardEventStream},
+    Config, Event, Intents, Shard,
 };
-use songbird::SerenityInit;
-use std::time::Duration;
-use tokio::time::sleep;
-use tracing::{error, info};
+use twilight_http::Client;
+use twilight_model::{
+    application::interaction::{application_command::CommandData, Interaction, InteractionData},
+    http::interaction::{InteractionResponse, InteractionResponseType},
+};
 
-struct Handler;
-
-#[async_trait]
-impl EventHandler for Handler {
-    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        if let Interaction::Command(command) = interaction {
-            let _ = command.defer(&ctx.http).await;
-            let content = match command.data.name.as_str() {
-                "나가" => Some(commands::leave::run(&ctx, &command).await),
-                "재생" => Some(commands::play::run(&ctx, &command, &command.data.options).await),
-                "스킵" => Some(commands::skip::run(&ctx, &command).await),
-                "볼륨" => {
-                    Some(commands::volume::run(&ctx, &command, &command.data.options).await)
-                }
-                _ => Some(CreateEmbed::new().description("")),
-            };
-
-            if let Some(content) = content {
-                let data = CreateInteractionResponseFollowup::new().embed(content);
-                if let Err(why) = command.create_followup(&ctx.http, data).await {
-                    error!("Cannot respond to slash command: {why}");
-                }
-            }
-        }
-    }
-
-    async fn ready(&self, ctx: Context, ready: Ready) {
-        if let Some(shard) = ready.shard {
-            info!(
-                "{} is connected on shard {}/{}!",
-                ready.user.name,
-                shard.id.0 + 1,
-                shard.total
-            );
-            if shard.id.0 != 0 {
-                return;
-            };
-        }
-        let commands = Command::set_global_commands(
-            &ctx.http,
-            vec![
-                commands::leave::register(),
-                commands::play::register(),
-                commands::skip::register(),
-                commands::volume::register(),
-            ],
-        )
-        .await
-        .expect("Error creating commands");
-        for command in commands {
-            let command_name = command.name;
-            info!("Create command: {command_name}");
-        }
-    }
+pub struct State {
+    client: Client,
+    cache: InMemoryCache,
+    songbird: Songbird,
 }
 
 #[tokio::main]
-async fn main() {
-    dotenvy::dotenv();
-    tracing_subscriber::fmt::init();
+async fn main() -> anyhow::Result<()> {
+    let _ = dotenvy::dotenv();
+    tracing_subscriber::fmt()
+        .compact()
+        .with_max_level(Level::INFO)
+        .init();
     let token = std::env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
-    let intents = GatewayIntents::GUILDS | GatewayIntents::GUILD_VOICE_STATES;
-    let mut client = Client::builder(token, intents)
-        .event_handler(Handler)
-        .register_songbird()
-        .type_map_insert::<commands::play::HttpKey>(HttpClient::new())
-        .await
-        .expect("Error creating client");
-    let manager = client.shard_manager.clone();
 
-    tokio::spawn(async move {
-        loop {
-            sleep(Duration::from_secs(30)).await;
-            let lock = manager.lock().await;
-            let shard_runners = lock.runners.lock().await;
-            for (id, runner) in shard_runners.iter() {
-                info!(
-                    "Shard ID {} is {} with a latency of {:?}",
-                    id, runner.stage, runner.latency,
-                );
+    let client = Client::new(token.clone());
+    let intents = Intents::GUILDS | Intents::GUILD_VOICE_STATES;
+    let config = Config::builder(token.clone(), intents).build();
+    let mut shards: Vec<Shard> =
+        stream::create_recommended(&client, config, |_, builder| builder.build())
+            .await?
+            .collect();
+    let user_id = client.current_user().await?.model().await?.id;
+    let commands = [commands::play::register(), commands::skip::register()];
+    let application = client.current_user_application().await?.model().await?;
+    let interaction_client = client.interaction(application.id);
+
+    tracing::info!("logged as {} with ID {}", application.name, application.id);
+
+    if let Err(error) = interaction_client.set_global_commands(&commands).await {
+        tracing::error!(?error, "failed to register commands");
+    }
+
+    let cache = InMemoryCache::builder().build();
+
+    let senders = TwilightMap::new(
+        shards
+            .iter()
+            .map(|s| (s.id().number(), s.sender()))
+            .collect(),
+    );
+
+    let songbird = Songbird::twilight(Arc::new(senders), user_id);
+
+    let state = Arc::new(State {
+        client,
+        cache,
+        songbird,
+    });
+
+    let mut stream = ShardEventStream::new(shards.iter_mut());
+
+    while let Some((shard, event)) = stream.next().await {
+        let event = match event {
+            Ok(event) => event,
+            Err(error) => {
+                if error.is_fatal() {
+                    tracing::error!(?error, "fatal error while receiving event");
+                    break;
+                }
+
+                tracing::warn!(?error, "error while receiving event");
+                continue;
             }
-        }
-    });
-    tokio::spawn(async move {
-        if let Err(why) = client.start_shards(2).await {
-            error!("Client error: {:?}", why);
         };
-    });
-    let _ = tokio::signal::ctrl_c().await;
-    info!("Received Ctrl-C, shutting down.");
+
+        tracing::info!(kind = ?event.kind(), shard = ?shard.id().number(), "received event");
+        state.songbird.process(&event).await;
+        state.cache.update(&event);
+        tokio::spawn(process_interactions(event, Arc::clone(&state)));
+    }
+
+    Ok(())
+}
+
+pub async fn process_interactions(event: Event, state: Arc<State>) {
+    let mut interaction = match event {
+        Event::InteractionCreate(interaction) => interaction.0,
+        _ => return,
+    };
+
+    let data = match mem::take(&mut interaction.data) {
+        Some(InteractionData::ApplicationCommand(data)) => *data,
+        _ => {
+            tracing::warn!("ignoring non-command interaction");
+            return;
+        }
+    };
+
+    if let Err(error) = state
+        .client
+        .interaction(interaction.application_id)
+        .create_response(
+            interaction.id,
+            &interaction.token,
+            &InteractionResponse {
+                kind: InteractionResponseType::DeferredChannelMessageWithSource,
+                data: None,
+            },
+        )
+        .await
+    {
+        tracing::error!(?error, "error while handling command");
+        return;
+    };
+
+    if let Err(error) = handle_command(interaction, data, &state).await {
+        tracing::error!(?error, "error while handling command");
+    }
+}
+
+async fn handle_command(
+    interaction: Interaction,
+    data: CommandData,
+    state: &State,
+) -> anyhow::Result<()> {
+    let content = match &*data.name {
+        "재생" => commands::play::run(interaction.clone(), data, state).await,
+        "스킵" => commands::skip::run(interaction.clone(), state).await,
+        name => anyhow::bail!("unknown command: {}", name),
+    };
+    if let Ok(content) = content {
+        state
+            .client
+            .interaction(interaction.application_id)
+            .create_followup(&interaction.token)
+            .embeds(&[content])?
+            .await?;
+    }
+    Ok(())
 }

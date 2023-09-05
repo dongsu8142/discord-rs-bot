@@ -1,35 +1,36 @@
-use serenity::builder::*;
-use serenity::model::prelude::*;
-use serenity::prelude::*;
-use tracing::error;
+use crate::State;
+use twilight_model::{
+    application::{
+        command::{Command, CommandType},
+        interaction::Interaction,
+    },
+    channel::message::Embed,
+};
+use twilight_util::builder::{command::CommandBuilder, embed::EmbedBuilder};
 
-pub async fn run(ctx: &Context, command: &CommandInteraction) -> CreateEmbed {
-    let guild_id = command.guild_id.unwrap();
+pub async fn run(interaction: Interaction, state: &State) -> anyhow::Result<Embed> {
+    let guild_id = interaction.guild_id.unwrap();
 
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-    let handler = manager.get(guild_id);
-    let has_handler = handler.is_some();
+    let call_lock = state.songbird.get(guild_id);
 
-    if has_handler {
-        if let Err(why) = handler.unwrap().lock().await.queue().skip() {
-            error!("Leave command error: {why:?}");
-            return CreateEmbed::new()
-                .title("스킵에 실패했습니다.")
-                .colour(Colour::RED);
+    if call_lock.is_some() {
+        if let Err(why) = call_lock.unwrap().lock().await.queue().skip() {
+            tracing::error!("Leave command error: {why:?}");
+            return Ok(EmbedBuilder::new().title("스킵에 실패했습니다.").build());
         }
-        CreateEmbed::new()
-            .title("스킵을 완료했습니다.")
-            .colour(Colour::BLUE)
+        Ok(EmbedBuilder::new().title("스킵을 완료했습니다.").build())
     } else {
-        CreateEmbed::new()
+        Ok(EmbedBuilder::new()
             .title("음성 채널에 들어가 있지 않습니다.")
-            .colour(Colour::RED)
+            .build())
     }
 }
 
-pub fn register() -> CreateCommand {
-    CreateCommand::new("스킵").description("재생 중인 노래를 스킵합니다.")
+pub fn register() -> Command {
+    CommandBuilder::new(
+        "스킵",
+        "재생 중인 노래를 스킵합니다.",
+        CommandType::ChatInput,
+    )
+    .build()
 }

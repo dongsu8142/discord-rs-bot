@@ -1,122 +1,76 @@
-use reqwest::Client as HttpClient;
-use serenity::model::prelude::*;
-use serenity::prelude::*;
-use serenity::{async_trait, builder::*};
-use songbird::tracks::TrackQueue;
-use songbird::{
-    input::{Compose, YoutubeDl},
-    Event, EventHandler, TrackEvent,
+use crate::State;
+use songbird::input::{Compose, YoutubeDl};
+use twilight_model::{
+    application::{
+        command::{Command, CommandType},
+        interaction::{
+            application_command::{CommandData, CommandOptionValue},
+            Interaction,
+        },
+    },
+    channel::message::Embed,
 };
-use songbird::{EventContext, Songbird};
-use std::sync::Arc;
-
-pub struct HttpKey;
-
-impl TypeMapKey for HttpKey {
-    type Value = HttpClient;
-}
-
-struct TrackEnd {
-    manager: Arc<Songbird>,
-    queue: TrackQueue,
-    guild_id: GuildId,
-}
-
-#[async_trait]
-impl EventHandler for TrackEnd {
-    async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
-        if let EventContext::Track(_track_list) = ctx {
-            if self.queue.is_empty() {
-                let _ = self.manager.remove(self.guild_id).await.unwrap();
-            }
-        };
-
-        None
-    }
-}
+use twilight_util::builder::{
+    command::{CommandBuilder, StringBuilder},
+    embed::{EmbedAuthorBuilder, EmbedBuilder, ImageSource},
+};
 
 pub async fn run(
-    ctx: &Context,
-    command: &CommandInteraction,
-    options: &[CommandDataOption],
-) -> CreateEmbed {
-    let music = options.get(0).unwrap().value.as_str().unwrap().to_string();
-    let (guild_id, channel_id) = {
-        let guild_id = command.guild_id.unwrap();
-        let guild = ctx.cache.guild(guild_id).unwrap();
-        let channel_id = guild
-            .voice_states
-            .get(&command.user.id)
-            .and_then(|voice_state| voice_state.channel_id);
-        (guild_id, channel_id)
+    interaction: Interaction,
+    data: CommandData,
+    state: &State,
+) -> anyhow::Result<Embed> {
+    let music = match &data.options.get(0).unwrap().value {
+        CommandOptionValue::String(music) => music,
+        _ => {
+            return Ok(EmbedBuilder::new()
+                .title("노래 제목을 입력해주세요.")
+                .build())
+        }
     };
-
-    let connect_to = match channel_id {
-        Some(channel) => channel,
+    let guild_id = interaction.guild_id.unwrap();
+    let voice_state = state
+        .cache
+        .voice_state(interaction.author_id().unwrap(), guild_id);
+    let channel_id = match voice_state {
+        Some(voice_state) => voice_state.channel_id(),
         None => {
-            return CreateEmbed::new()
-                .description("음성 채널에 들어가 있지 않습니다.")
-                .colour(Colour::RED);
+            return Ok(EmbedBuilder::new()
+                .title("음성 채널에 들어가 있지 않습니다.")
+                .build())
         }
     };
 
-    let http_client = {
-        let data = ctx.data.read().await;
-        data.get::<HttpKey>()
-            .cloned()
-            .expect("Guaranteed to exist in the typemap.")
-    };
+    let call_lock;
 
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    let has_handler = manager.get(guild_id).is_some();
-
-    let handler_lock;
-
-    let mut handler = match has_handler {
-        true => {
-            handler_lock = manager.get(guild_id).unwrap();
-            handler_lock.lock().await
-        }
-        false => {
-            handler_lock = manager.join(guild_id, connect_to).await.unwrap();
-            handler_lock.lock().await
+    let mut call = {
+        let get_call = state.songbird.get(guild_id);
+        if get_call.is_some() {
+            call_lock = get_call.unwrap();
+            call_lock.lock().await
+        } else {
+            call_lock = state.songbird.join(guild_id, channel_id).await.unwrap();
+            call_lock.lock().await
         }
     };
 
-    let mut src = YoutubeDl::new(http_client, format!("ytsearch1:{}", music));
+    let mut src = YoutubeDl::new(reqwest::Client::new(), format!("ytsearch1:{}", music));
     let metadata = src.aux_metadata().await.unwrap();
 
-    let song = handler.enqueue_input(src.into()).await;
-    let queue = handler.queue().clone();
-    let _ = song.add_event(
-        Event::Track(TrackEvent::End),
-        TrackEnd {
-            manager,
-            queue,
-            guild_id,
-        },
-    );
-    CreateEmbed::new()
-        .author(CreateEmbedAuthor::new("노래를 재생합니다."))
+    let _song = call.enqueue_input(src.into()).await;
+
+    Ok(EmbedBuilder::new()
+        .author(EmbedAuthorBuilder::new("노래를 재생합니다.").build())
         .title(metadata.title.as_ref().unwrap_or(&"<UNKNOWN>".to_string()))
         .url(metadata.source_url.as_ref().unwrap_or(&" ".to_string()))
-        .thumbnail(metadata.thumbnail.as_ref().unwrap_or(&" ".to_string()))
-        .colour(Colour::BLUE)
+        .thumbnail(ImageSource::url(
+            metadata.thumbnail.as_ref().unwrap_or(&" ".to_string()),
+        )?)
+        .build())
 }
 
-pub fn register() -> CreateCommand {
-    CreateCommand::new("재생")
-        .description("노래를 재생합니다.")
-        .add_option(
-            CreateCommandOption::new(
-                CommandOptionType::String,
-                "제목",
-                "노래 제목을 입력해주세요",
-            )
-            .required(true),
-        )
+pub fn register() -> Command {
+    CommandBuilder::new("재생", "노래를 재생합니다.", CommandType::ChatInput)
+        .option(StringBuilder::new("제목", "노래 제목을 입력해주세요").required(true))
+        .build()
 }
