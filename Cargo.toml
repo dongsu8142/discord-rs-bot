@@ -22,6 +22,6 @@ twilight-util = { version = "0.15", features = ["builder"] }
 
 [dependencies.songbird]
 git = "https://github.com/serenity-rs/songbird"
-rev = "139b6854d557175ccade5b77dc4b2b0475c57816"
+branch = "next"
 default-features = false
 features = ["driver", "gateway", "twilight", "rustls", "builtin-queue"]
