@@ -57,6 +57,7 @@ pub async fn run(
     let mut src = YoutubeDl::new(reqwest::Client::new(), format!("ytsearch1:{}", music));
     let metadata = src.aux_metadata().await.unwrap();
 
+    call.set_bitrate(songbird::driver::Bitrate::Max);
     let _song = call.enqueue_input(src.into()).await;
 
     Ok(EmbedBuilder::new()
