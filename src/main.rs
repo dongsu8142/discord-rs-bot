@@ -38,7 +38,11 @@ async fn main() -> anyhow::Result<()> {
             .await?
             .collect();
     let user_id = client.current_user().await?.model().await?.id;
-    let commands = [commands::play::register(), commands::skip::register()];
+    let commands = [
+        commands::play::register(),
+        commands::skip::register(),
+        commands::leave::register(),
+    ];
     let application = client.current_user_application().await?.model().await?;
     let interaction_client = client.interaction(application.id);
 
@@ -136,6 +140,7 @@ async fn handle_command(
     let content = match &*data.name {
         "재생" => commands::play::run(interaction.clone(), data, state).await,
         "스킵" => commands::skip::run(interaction.clone(), state).await,
+        "나가" => commands::leave::run(interaction.clone(), state).await,
         name => anyhow::bail!("unknown command: {}", name),
     };
     if let Ok(content) = content {
