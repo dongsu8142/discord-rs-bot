@@ -4,7 +4,7 @@ use futures::StreamExt;
 use songbird::{shards::TwilightMap, Songbird};
 use std::{mem, sync::Arc};
 use tracing::Level;
-use twilight_cache_inmemory::InMemoryCache;
+use twilight_cache_inmemory::{InMemoryCache, ResourceType};
 use twilight_gateway::{
     stream::{self, ShardEventStream},
     Config, Event, Intents, Shard,
@@ -48,7 +48,9 @@ async fn main() -> anyhow::Result<()> {
         tracing::error!(?error, "failed to register commands");
     }
 
-    let cache = InMemoryCache::builder().build();
+    let cache = InMemoryCache::builder()
+        .resource_types(ResourceType::VOICE_STATE)
+        .build();
 
     let senders = TwilightMap::new(
         shards
