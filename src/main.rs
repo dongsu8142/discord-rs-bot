@@ -127,7 +127,7 @@ pub async fn process_interactions(event: Event, state: Arc<State>) {
         return;
     };
 
-    if let Err(error) = handle_command(interaction, data, &state).await {
+    if let Err(error) = handle_command(interaction, data, Arc::clone(&state)).await {
         tracing::error!(?error, "error while handling command");
     }
 }
@@ -135,12 +135,12 @@ pub async fn process_interactions(event: Event, state: Arc<State>) {
 async fn handle_command(
     interaction: Interaction,
     data: CommandData,
-    state: &State,
+    state: Arc<State>,
 ) -> anyhow::Result<()> {
     let content = match &*data.name {
-        "재생" => commands::play::run(interaction.clone(), data, state).await,
-        "스킵" => commands::skip::run(interaction.clone(), state).await,
-        "나가" => commands::leave::run(interaction.clone(), state).await,
+        "재생" => commands::play::run(interaction.clone(), data, Arc::clone(&state)).await,
+        "스킵" => commands::skip::run(interaction.clone(), Arc::clone(&state)).await,
+        "나가" => commands::leave::run(interaction.clone(), Arc::clone(&state)).await,
         name => anyhow::bail!("unknown command: {}", name),
     };
     if let Ok(content) = content {

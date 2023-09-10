@@ -1,4 +1,5 @@
 use crate::State;
+use std::sync::Arc;
 use twilight_model::{
     application::{
         command::{Command, CommandType},
@@ -8,7 +9,7 @@ use twilight_model::{
 };
 use twilight_util::builder::{command::CommandBuilder, embed::EmbedBuilder};
 
-pub async fn run(interaction: Interaction, state: &State) -> anyhow::Result<Embed> {
+pub async fn run(interaction: Interaction, state: Arc<State>) -> anyhow::Result<Embed> {
     let guild_id = interaction.guild_id.unwrap();
 
     let has_call = state.songbird.get(guild_id).is_some();

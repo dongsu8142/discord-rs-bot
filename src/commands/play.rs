@@ -1,5 +1,6 @@
 use crate::State;
 use songbird::input::{Compose, YoutubeDl};
+use std::sync::Arc;
 use twilight_model::{
     application::{
         command::{Command, CommandType},
@@ -18,7 +19,7 @@ use twilight_util::builder::{
 pub async fn run(
     interaction: Interaction,
     data: CommandData,
-    state: &State,
+    state: Arc<State>,
 ) -> anyhow::Result<Embed> {
     let music = match &data.options.get(0).unwrap().value {
         CommandOptionValue::String(music) => music,
