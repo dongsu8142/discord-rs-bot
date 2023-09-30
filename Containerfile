@@ -20,7 +20,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
 RUN cargo build --release
 
-FROM debian:trixie-slim
+FROM debian:unstable-slim
 
 WORKDIR /usr/local/bin
 
