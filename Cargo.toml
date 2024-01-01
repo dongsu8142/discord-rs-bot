@@ -8,8 +8,8 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 dotenvy = "0.15"
-futures = "0.3.29"
-reqwest = "0.11.22"
+futures = "0.3.30"
+reqwest = "0.11.23"
 symphonia = { version = "0.5", features = ["aac", "mp3", "isomp4", "alac"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 tracing = "0.1"
@@ -21,6 +21,6 @@ twilight-model = "0.15"
 twilight-util = { version = "0.15", features = ["builder"] }
 
 [dependencies.songbird]
-version = "0.4.0-rc"
+version = "0.4.0"
 default-features = false
 features = ["driver", "gateway", "twilight", "rustls", "builtin-queue"]
